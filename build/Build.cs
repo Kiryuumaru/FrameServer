@@ -13,9 +13,9 @@ class Build : BaseNukeBuildHelpers
 {
     public static int Main() => Execute<Build>(x => x.Interactive);
 
-    public override string[] EnvironmentBranches { get; } = ["prerelease", "master"];
+    public override string[] EnvironmentBranches { get; } = ["prerelease", "main"];
 
-    public override string MainEnvironmentBranch => "master";
+    public override string MainEnvironmentBranch => "main";
 
     private readonly string appId = "frame_server";
     private readonly OSPlatform[] runtimeMatrix = [OSPlatform.Windows, OSPlatform.Linux];
