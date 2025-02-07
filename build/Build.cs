@@ -27,6 +27,10 @@ class Build : BaseNukeBuildHelpers
 
     BuildEntry BuildEntry => _ => _
         .AppId(appId)
+        .CheckoutFetchDepth(0)
+        .CheckoutSubmodules(SubmoduleCheckoutType.Recursive)
+        .CachePath(RootDirectory / "out")
+        .CacheInvalidator("1")
         .Matrix(runtimeMatrix, (_, runtime) => _
             .Matrix(archMatrix, (_, arch) => _
                 .WorkflowId($"build_{runtime.ToString().ToLowerInvariant()}_{arch.ToString().ToLowerInvariant()}")

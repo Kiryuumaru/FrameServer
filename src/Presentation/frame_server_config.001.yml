@@ -1,0 +1,15 @@
+# This file is used to configure the frame server. It is a YAML file that contains the following keys:
+# - camera_index: The index of the camera to use. This is an integer value that corresponds to the index of the camera in the list of available cameras.
+# - rtsp_link: The URL of the RTSP stream to use. This is a string value that contains the URL of the RTSP stream to use.  
+
+usb01:
+  port: 23456
+  height: 480
+  width: 640
+  source: 0
+
+# rtsp01_leander:
+#   port: 23457
+#   height: 480
+#   width: 640
+#   source: rtsp://root:Skunkw0rks@192.168.100.185/axis-media/media.amp
