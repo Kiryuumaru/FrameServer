@@ -4,6 +4,8 @@ using Application.Configuration.Extensions;
 using System.Runtime.InteropServices;
 using Application.ServiceMaster.Services;
 using Application.Common.Extensions;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 
 namespace Presentation.Services;
 

@@ -7,6 +7,8 @@ using CliFx.Attributes;
 using CliFx.Exceptions;
 using CliFx.Infrastructure;
 using Infrastructure.Serilog;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
 namespace Presentation.Commands;
 
@@ -22,9 +24,9 @@ public abstract class BaseCommand : ICommand
     //public string Home { get; set; } = AbsolutePath.Create(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData)) / ApplicationDefaults.ExecutableName;
     public string Home { get; set; } = AbsolutePath.Create(Environment.CurrentDirectory) / ApplicationDefaults.ExecutableName;
 
-    public ApplicationHostBuilder<WebApplicationBuilder> CreateBuilder()
+    public ApplicationHostBuilder<HostApplicationBuilder> CreateBuilder()
     {
-        var appBuilder = ApplicationHost.FromBuilder(WebApplication.CreateBuilder())
+        var appBuilder = ApplicationHost.FromBuilder(Host.CreateApplicationBuilder())
             .Add<Presentation>()
             .Add<SerilogInfrastructure>();
 
@@ -54,5 +56,5 @@ public abstract class BaseCommand : ICommand
         catch (OperationCanceledException) { }
     }
 
-    public abstract ValueTask Run(ApplicationHostBuilder<WebApplicationBuilder> appBuilder, CancellationToken stoppingToken);
+    public abstract ValueTask Run(ApplicationHostBuilder<HostApplicationBuilder> appBuilder, CancellationToken stoppingToken);
 }

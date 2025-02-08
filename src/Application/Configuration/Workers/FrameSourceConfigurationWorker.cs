@@ -16,16 +16,18 @@ using OpenCvSharp;
 using Application.Common.Extensions;
 using Microsoft.Extensions.DependencyInjection;
 using Application.Configuration.Services;
+using System.Threading;
+using Application.Common.Features;
 
 namespace Application.Configuration.Workers;
 
-public class FrameSourceConfigurationWorkers(ILogger<FrameSourceConfigurationWorkers> logger, IServiceProvider serviceProvider, IConfiguration configuration) : BackgroundService
+public class FrameSourceConfigurationWorker(ILogger<FrameSourceConfigurationWorker> logger, IServiceProvider serviceProvider, IConfiguration configuration) : BackgroundService
 {
-    private readonly ILogger<FrameSourceConfigurationWorkers> _logger = logger;
+    private readonly ILogger<FrameSourceConfigurationWorker> _logger = logger;
     private readonly IServiceProvider _serviceProvider = serviceProvider;
     private readonly IConfiguration _configuration = configuration;
 
-    private readonly SemaphoreSlim _loadLocker = new(1);
+    private readonly Locker _loadLocker = new();
     private readonly IDeserializer _deserializer = new DeserializerBuilder()
             .WithNamingConvention(CamelCaseNamingConvention.Instance)
             .Build();
@@ -38,9 +40,17 @@ public class FrameSourceConfigurationWorkers(ILogger<FrameSourceConfigurationWor
         return new Dictionary<string, FrameSourceConfig>(_frameSources);
     }
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    protected override Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        using var _ = _logger.BeginScopeMap(nameof(FrameSourceConfigurationWorkers), nameof(ExecuteAsync));
+        ExecuteAsyncAndForget(stoppingToken);
+        return Task.CompletedTask;
+    }
+
+    protected async void ExecuteAsyncAndForget(CancellationToken stoppingToken)
+    {
+        using var _ = _logger.BeginScopeMap(nameof(FrameSourceConfigurationWorker), nameof(ExecuteAsyncAndForget));
+
+        await Task.Delay(2000, stoppingToken);
 
         var directory = _configuration.GetHomePath();
         var configFileFilter = _configuration.GetConfigFileFilter();
@@ -67,17 +77,19 @@ public class FrameSourceConfigurationWorkers(ILogger<FrameSourceConfigurationWor
 
         _logger.LogInformation("Monitoring '{ConfigFilter}' for changes...", Path.Combine(directory, configFileFilter));
 
-        await LoadConfiguration();
+        await LoadConfiguration(stoppingToken);
     }
 
     private void OnConfigFileChanged(object sender, FileSystemEventArgs e)
     {
         Task.Run(async () =>
         {
+            using var _ = _logger.BeginScopeMap(nameof(FrameSourceConfigurationWorker), nameof(OnConfigFileChanged));
+
             await Task.Delay(500);
             try
             {
-                await LoadConfiguration();
+                await LoadConfiguration(default);
             }
             catch (Exception ex)
             {
@@ -86,18 +98,18 @@ public class FrameSourceConfigurationWorkers(ILogger<FrameSourceConfigurationWor
         });
     }
 
-    private async Task LoadConfiguration()
+    private async Task LoadConfiguration(CancellationToken cancellationToken)
     {
-        using var _ = _logger.BeginScopeMap(nameof(FrameSourceConfigurationWorkers), nameof(LoadConfiguration));
+        using var _ = _logger.BeginScopeMap(nameof(FrameSourceConfigurationWorker), nameof(LoadConfiguration));
 
-        var frameSourceConfigurationService = _serviceProvider.GetRequiredService<FrameSourceConfigurationService>();
+        var frameSourceConfigurationService = _serviceProvider.GetRequiredService<FrameSourceConfigurationHolderService>();
 
         string directory = _configuration.GetHomePath();
         string configFileFilter = _configuration.GetConfigFileFilter();
 
         try
         {
-            await _loadLocker.WaitAsync();
+            using var configLock = await _loadLocker.WaitAsync(cancellationToken);
 
             var files = GetAllFilesUsingFilter(directory, configFileFilter);
             var newFrameSources = new Dictionary<string, (AbsolutePath Path, FrameSourceConfig Config)>();
@@ -124,15 +136,39 @@ public class FrameSourceConfigurationWorkers(ILogger<FrameSourceConfigurationWor
 
             foreach (var kvp in newFrameSources)
             {
+                if (string.IsNullOrEmpty(kvp.Value.Config.Source))
+                {
+                    throw new Exception($"Source is missing for key '{kvp.Key}' in file '{kvp.Value.Path}'");
+                }
+                if (kvp.Value.Config.Port < 1 || kvp.Value.Config.Port > 65535)
+                {
+                    throw new Exception($"Port must be between 1 and 65535 for key '{kvp.Key}' in file '{kvp.Value.Path}'");
+                }
+            }
+
+            foreach (var kvp in newFrameSources)
+            {
+                if (!string.IsNullOrEmpty(kvp.Value.Config.VideoApi))
+                {
+                    OpenCVExtensions.StringToVideoCaptureApi(kvp.Value.Config.VideoApi);
+                }
+            }
+
+            foreach (var kvp in newFrameSources)
+            {
                 var duplicateSource = newFrameSources.FirstOrDefault(i => i.Key != kvp.Key && i.Value.Config.Source.Equals(kvp.Value.Config.Source, StringComparison.InvariantCultureIgnoreCase));
                 var duplicatePort = newFrameSources.FirstOrDefault(i => i.Key != kvp.Key && i.Value.Config.Port == kvp.Value.Config.Port);
                 if (duplicateSource.Key != null)
                 {
-                    throw new Exception($"Duplicate source found for '{kvp.Value.Path}' key '{kvp.Key}' and '{duplicateSource.Value.Path}' key '{duplicateSource.Key}': Source: {kvp.Value.Config.Source}");
+                    throw new Exception($"Duplicate source found for " +
+                        $"'{kvp.Value.Path}' key '{kvp.Key}' and '{duplicateSource.Value.Path}' key '{duplicateSource.Key}': " +
+                        $"Source: {kvp.Value.Config.Source}");
                 }
                 if (duplicatePort.Key != null)
                 {
-                    throw new Exception($"Duplicate port found for '{kvp.Value.Path}' key '{kvp.Key}' and '{duplicatePort.Value.Path}' key '{duplicatePort.Key}': Port: {kvp.Value.Config.Port}");
+                    throw new Exception($"Duplicate port found for " +
+                        $"'{kvp.Value.Path}' key '{kvp.Key}' and '{duplicatePort.Value.Path}' key '{duplicatePort.Key}': " +
+                        $"Port: {kvp.Value.Config.Port}");
                 }
             }
 
@@ -144,7 +180,7 @@ public class FrameSourceConfigurationWorkers(ILogger<FrameSourceConfigurationWor
                 {
                     _frameSources.Remove(oldEntry.Key);
                     _logger.LogInformation("Frame source config removed: {RemovedFrameSourceKey}", oldEntry.Key);
-                    frameSourceConfigurationService.InvokeFrameSourceRemovedCallback(new FrameSourceRemovedEventArgs(oldEntry.Key, oldEntry.Value));
+                    await frameSourceConfigurationService.InvokeFrameSourceRemovedCallback(new FrameSourceRemovedEventArgs(oldEntry.Key, oldEntry.Value), cancellationToken);
                 }
             }
 
@@ -158,16 +194,18 @@ public class FrameSourceConfigurationWorkers(ILogger<FrameSourceConfigurationWor
                 if (!oldFrameSources.TryGetValue(newEntry.Key, out var oldConfig))
                 {
                     _frameSources[newEntry.Key] = newEntry.Value.Config;
-                    _logger.LogInformation("Frame source config added '{AddedFrameSourceKey}': Source: {Source}, Port: {Port}, Resolution: {Resolution}", newEntry.Key, newEntry.Value.Config.Source, newEntry.Value.Config.Port, resolution);
-                    frameSourceConfigurationService.InvokeFrameSourceAddedCallback(new FrameSourceAddedEventArgs(newEntry.Key, newEntry.Value.Config));
+                    _logger.LogInformation("Frame source config added '{AddedFrameSourceKey}': Source: {Source}, Resolution: {Resolution}, VideoAPI {VideoAPI}, Port: {Port}, Enabled: {Enabled}",
+                        newEntry.Key, newEntry.Value.Config.Source, resolution, newEntry.Value.Config.VideoApi, newEntry.Value.Config.Port, newEntry.Value.Config.Enabled);
+                    await frameSourceConfigurationService.InvokeFrameSourceAddedCallback(new FrameSourceAddedEventArgs(newEntry.Key, newEntry.Value.Config), cancellationToken);
                 }
                 else
                 {
                     if (oldConfig != newEntry.Value.Config)
                     {
                         _frameSources[newEntry.Key] = newEntry.Value.Config;
-                        _logger.LogInformation("Frame source config modified '{ModifiedFrameSourceKey}': Source: {Source}, Port: {Port}, Resolution: {Resolution}", newEntry.Key, newEntry.Value.Config.Source, newEntry.Value.Config.Port, resolution);
-                        frameSourceConfigurationService.InvokeFrameSourceModifiedCallback(new FrameSourceModifiedEventArgs(newEntry.Key, oldConfig, newEntry.Value.Config));
+                        _logger.LogInformation("Frame source config modified '{ModifiedFrameSourceKey}': Source: {Source}, Resolution: {Resolution}, VideoAPI {VideoAPI}, Port: {Port}, Enabled: {Enabled}",
+                            newEntry.Key, newEntry.Value.Config.Source, resolution, newEntry.Value.Config.VideoApi, newEntry.Value.Config.Port, newEntry.Value.Config.Enabled);
+                        await frameSourceConfigurationService.InvokeFrameSourceModifiedCallback(new FrameSourceModifiedEventArgs(newEntry.Key, oldConfig, newEntry.Value.Config), cancellationToken);
                     }
                 }
             }
@@ -175,10 +213,6 @@ public class FrameSourceConfigurationWorkers(ILogger<FrameSourceConfigurationWor
         catch (Exception ex)
         {
             _logger.LogError("Error on loading configs: {ErrorMessage}", ex.Message);
-        }
-        finally
-        {
-            _loadLocker.Release();
         }
     }
 

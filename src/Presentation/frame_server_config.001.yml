@@ -1,12 +1,16 @@
 # This file is used to configure the frame server. It is a YAML file that contains the following keys:
-# - camera_index: The index of the camera to use. This is an integer value that corresponds to the index of the camera in the list of available cameras.
-# - rtsp_link: The URL of the RTSP stream to use. This is a string value that contains the URL of the RTSP stream to use.  
+# - port: The port number on which the server will listen. This is an integer value. Required
+# - source: The source of the video stream. This can be an integer value representing the index of the camera or a string value containing the URL of the RTSP stream. Required
+# - height: The height of the video frame. This is an integer value representing the number of pixels. Optional
+# - width: The width of the video frame. This is an integer value representing the number of pixels. Optional
+# - videoApi: The video API to use. This is a string value that specifies the video API (e.g., 'dshow' for DirectShow). Optional
 
 usb01:
   port: 23456
+  source: 0
   height: 480
   width: 640
-  source: 0
+  videoApi: dshow
 
 # rtsp01_leander:
 #   port: 23457

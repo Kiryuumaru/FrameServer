@@ -6,34 +6,14 @@ using Application.Configuration.Extensions;
 using Microsoft.Extensions.Configuration;
 using Infrastructure.Serilog.Enrichers;
 using Microsoft.Extensions.Logging;
+using Application;
+using Serilog.Templates;
+using Serilog.Templates.Themes;
 
 namespace Infrastructure.Serilog.Common;
 
 internal static class LoggerBuilder
 {
-    public static SystemConsoleTheme Theme()
-    {
-        return new SystemConsoleTheme(new Dictionary<ConsoleThemeStyle, SystemConsoleThemeStyle>()
-        {
-            [ConsoleThemeStyle.Text] = new SystemConsoleThemeStyle { Foreground = ConsoleColor.White },
-            [ConsoleThemeStyle.SecondaryText] = new SystemConsoleThemeStyle { Foreground = ConsoleColor.Gray },
-            [ConsoleThemeStyle.TertiaryText] = new SystemConsoleThemeStyle { Foreground = ConsoleColor.DarkGray },
-            [ConsoleThemeStyle.Invalid] = new SystemConsoleThemeStyle { Foreground = ConsoleColor.Yellow },
-            [ConsoleThemeStyle.Null] = new SystemConsoleThemeStyle { Foreground = ConsoleColor.Blue },
-            [ConsoleThemeStyle.Name] = new SystemConsoleThemeStyle { Foreground = ConsoleColor.Gray },
-            [ConsoleThemeStyle.String] = new SystemConsoleThemeStyle { Foreground = ConsoleColor.Cyan },
-            [ConsoleThemeStyle.Number] = new SystemConsoleThemeStyle { Foreground = ConsoleColor.Magenta },
-            [ConsoleThemeStyle.Boolean] = new SystemConsoleThemeStyle { Foreground = ConsoleColor.Blue },
-            [ConsoleThemeStyle.Scalar] = new SystemConsoleThemeStyle { Foreground = ConsoleColor.Green },
-            [ConsoleThemeStyle.LevelVerbose] = new SystemConsoleThemeStyle { Foreground = ConsoleColor.Gray },
-            [ConsoleThemeStyle.LevelDebug] = new SystemConsoleThemeStyle { Foreground = ConsoleColor.White },
-            [ConsoleThemeStyle.LevelInformation] = new SystemConsoleThemeStyle { Foreground = ConsoleColor.Green },
-            [ConsoleThemeStyle.LevelWarning] = new SystemConsoleThemeStyle { Foreground = ConsoleColor.Black, Background = ConsoleColor.Yellow },
-            [ConsoleThemeStyle.LevelError] = new SystemConsoleThemeStyle { Foreground = ConsoleColor.Black, Background = ConsoleColor.Red },
-            [ConsoleThemeStyle.LevelFatal] = new SystemConsoleThemeStyle { Foreground = ConsoleColor.White, Background = ConsoleColor.Magenta }
-        });
-    }
-
     public static LoggerConfiguration Configure(LoggerConfiguration loggerConfiguration, IConfiguration configuration)
     {
         LogLevel logLevel = configuration.GetLoggerLevel();
@@ -56,10 +36,9 @@ internal static class LoggerBuilder
             .Enrich.WithProcessId()
             .Enrich.WithThreadId()
             .Enrich.With(new LogGuidEnricher(configuration))
-            .WriteTo.Console(
-                outputTemplate: "{Timestamp:u} [{Level:u3}] {Message:lj}{NewLine}{Exception}",
-                restrictedToMinimumLevel: logEventLevel,
-                theme: Theme());
+            .WriteTo.Console(new ExpressionTemplate(
+                template: "[{@t:yyyy-MM-dd HH:mm:ss} {@l:u3}]{#if Service is not null} ({Service}){#end} {@m} \n{@x}", theme: TemplateTheme.Code),
+                restrictedToMinimumLevel: logEventLevel);
 
         string? useOtlpExporterEndpoint = configuration["OTEL_EXPORTER_OTLP_ENDPOINT"];
         if (!string.IsNullOrWhiteSpace(useOtlpExporterEndpoint))
@@ -68,7 +47,7 @@ internal static class LoggerBuilder
                 .WriteTo.OpenTelemetry(options =>
                 {
                     options.Endpoint = useOtlpExporterEndpoint;
-                    options.ResourceAttributes.Add("service.name", "net-conduit");
+                    options.ResourceAttributes.Add("service.name", ApplicationDefaults.LogServiceName);
                 });
         }
 
@@ -78,7 +57,7 @@ internal static class LoggerBuilder
                 .MinimumLevel.Verbose()
                 .WriteTo.File(
                     formatter: new CompactJsonFormatter(),
-                    path: configuration.GetDataPath() / "logs" / "log-.jsonl",  
+                    path: configuration.GetDataPath() / "logs" / "log-.jsonl",
                     restrictedToMinimumLevel: LogEventLevel.Verbose,
                     rollingInterval: RollingInterval.Hour);
         }

@@ -13,6 +13,7 @@ public static class ILoggerExtensions
     {
         scopeMap ??= [];
         scopeMap["Service"] = serviceName;
+        scopeMap[$"ServiceAction"] = serviceAction;
         scopeMap[$"{serviceName}_ServiceAction"] = serviceAction;
         return logger.BeginScope(scopeMap);
     }

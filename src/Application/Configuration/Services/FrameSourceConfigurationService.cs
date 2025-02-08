@@ -1,6 +1,10 @@
-﻿using DisposableHelpers;
+﻿using Application.Common.Extensions;
+using Application.Common.Features;
+using DisposableHelpers;
+using DisposableHelpers.Attributes;
 using Domain.Events;
 using Domain.Models;
+using Microsoft.Extensions.DependencyInjection;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -9,91 +13,57 @@ using System.Threading.Tasks;
 
 namespace Application.Configuration.Services;
 
-internal class FrameSourceConfigurationService
+[Disposable]
+internal partial class FrameSourceConfigurationService(IServiceProvider serviceProvider)
 {
-    private readonly Dictionary<string, FrameSourceConfig> _frameSources = [];
+    private readonly IServiceProvider _serviceProvider = serviceProvider;
 
-    private readonly SemaphoreSlim _locker = new(1);
+    private readonly List<IDisposable> _disposables = [];
 
-    private readonly List<Action<FrameSourceAddedEventArgs>> _frameSourceAddedCallbacks = [];
-    private readonly List<Action<FrameSourceModifiedEventArgs>> _frameSourceModifiedCallbacks = [];
-    private readonly List<Action<FrameSourceRemovedEventArgs>> _frameSourceRemovedCallbacks = [];
+    private readonly Locker _locker = new();
 
     public Dictionary<string, FrameSourceConfig>? GetAllConfig()
     {
-        return new Dictionary<string, FrameSourceConfig>(_frameSources);
+        var frameSourceConfigurationService = _serviceProvider.GetRequiredService<FrameSourceConfigurationHolderService>();
+        return frameSourceConfigurationService.GetAllConfig();
     }
 
-    private Disposable SubscribeCallback(Action add, Action remove)
+    public async Task<IDisposable> SubscribeFrameSourceAddedCallback(Action<FrameSourceAddedEventArgs> action, CancellationToken cancellationToken)
     {
-        _locker.Wait();
-        try
+        var frameSourceConfigurationService = _serviceProvider.GetRequiredService<FrameSourceConfigurationHolderService>();
+        var disposable = await frameSourceConfigurationService.SubscribeFrameSourceAddedCallback(action, cancellationToken);
+        using var _ = await _locker.WaitAsync(cancellationToken);
+        _disposables.Add(disposable);
+        return disposable;
+    }
+
+    public async Task<IDisposable> SubscribeFrameSourceModifiedCallback(Action<FrameSourceModifiedEventArgs> action, CancellationToken cancellationToken)
+    {
+        var frameSourceConfigurationService = _serviceProvider.GetRequiredService<FrameSourceConfigurationHolderService>();
+        var disposable = await frameSourceConfigurationService.SubscribeFrameSourceModifiedCallback(action, cancellationToken);
+        using var _ = await _locker.WaitAsync(cancellationToken);
+        _disposables.Add(disposable);
+        return disposable;
+    }
+
+    public async Task<IDisposable> SubscribeFrameSourceRemovedCallback(Action<FrameSourceRemovedEventArgs> action, CancellationToken cancellationToken)
+    {
+        var frameSourceConfigurationService = _serviceProvider.GetRequiredService<FrameSourceConfigurationHolderService>();
+        var disposable = await frameSourceConfigurationService.SubscribeFrameSourceRemovedCallback(action, cancellationToken);
+        using var _ = await _locker.WaitAsync(cancellationToken);
+        _disposables.Add(disposable);
+        return disposable;
+    }
+
+    protected async ValueTask DisposeAsync(bool disposing)
+    {
+        if (disposing)
         {
-            add();
-            return new Disposable(disposing =>
+            using var _ = await _locker.WaitAsync(default);
+            foreach (var disposable in _disposables)
             {
-                _locker.Wait();
-                try
-                {
-                    remove();
-                }
-                finally
-                {
-                    _locker.Release();
-                }
-            });
+                disposable.Dispose();
+            }
         }
-        finally
-        {
-            _locker.Release();
-        }
-    }
-
-    private void InvokeCallback<TCallbackArgs>(List<Action<TCallbackArgs>> callbacks, TCallbackArgs eventArgs)
-    {
-        List<Action<TCallbackArgs>> callbackClone;
-        _locker.Wait();
-        try
-        {
-            callbackClone = [.. callbacks];
-        }
-        finally
-        {
-            _locker.Release();
-        }
-        foreach (var callback in callbackClone)
-        {
-            callback(eventArgs);
-        }
-    }
-
-    public IDisposable SubscribeFrameSourceAddedCallback(Action<FrameSourceAddedEventArgs> action)
-    {
-        return SubscribeCallback(() => _frameSourceAddedCallbacks.Add(action), () => _frameSourceAddedCallbacks.Remove(action));
-    }
-
-    public IDisposable SubscribeFrameSourceModifiedCallback(Action<FrameSourceModifiedEventArgs> action)
-    {
-        return SubscribeCallback(() => _frameSourceModifiedCallbacks.Add(action), () => _frameSourceModifiedCallbacks.Remove(action));
-    }
-
-    public IDisposable SubscribeFrameSourceRemovedCallback(Action<FrameSourceRemovedEventArgs> action)
-    {
-        return SubscribeCallback(() => _frameSourceRemovedCallbacks.Add(action), () => _frameSourceRemovedCallbacks.Remove(action));
-    }
-
-    internal void InvokeFrameSourceAddedCallback(FrameSourceAddedEventArgs eventArgs)
-    {
-        InvokeCallback(_frameSourceAddedCallbacks, eventArgs);
-    }
-
-    internal void InvokeFrameSourceModifiedCallback(FrameSourceModifiedEventArgs eventArgs)
-    {
-        InvokeCallback(_frameSourceModifiedCallbacks, eventArgs);
-    }
-
-    internal void InvokeFrameSourceRemovedCallback(FrameSourceRemovedEventArgs eventArgs)
-    {
-        InvokeCallback(_frameSourceRemovedCallbacks, eventArgs);
     }
 }

@@ -2,6 +2,8 @@
 using CliFx.Attributes;
 using Application.Logger.Interfaces;
 using CliFx.Exceptions;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Presentation.Commands;
 
@@ -17,7 +19,7 @@ public class DaemonLogsCommand : BaseCommand
     [CommandOption("scope", 's', Description = "Scope of logs.")]
     public IReadOnlyList<string>? Scope { get; set; }
 
-    public override async ValueTask Run(ApplicationHostBuilder<WebApplicationBuilder> appBuilder, CancellationToken stoppingToken)
+    public override async ValueTask Run(ApplicationHostBuilder<HostApplicationBuilder> appBuilder, CancellationToken stoppingToken)
     {
         Dictionary<string, string> scopePairs = [];
         if (Scope != null)

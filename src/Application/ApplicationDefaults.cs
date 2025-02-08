@@ -5,6 +5,7 @@ public static class ApplicationDefaults
     public const string ApplicationUserAgentName = AppNamePascalCase;
     public const string EnvironmentVarsPreName = AppNameUpperSnakeCase;
     public const string ExecutableName = AppNameSnakeCase;
+    public const string LogServiceName = AppNameKebabCase;
     public const string GithubRepoUrl = "https://github.com/Kiryuumaru/FrameServer";
 
     public const string AppNamePascalCase = "FrameServer";

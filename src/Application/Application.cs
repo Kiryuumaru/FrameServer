@@ -1,5 +1,6 @@
 ﻿using Application.Configuration.Services;
 using Application.Configuration.Workers;
+using Application.FrameStreamer.Workers;
 using Application.ServiceMaster.Services;
 using ApplicationBuilderHelpers;
 using Microsoft.Extensions.DependencyInjection;
@@ -15,7 +16,10 @@ public class Application : ApplicationDependency
         services.AddScoped<ServiceManagerService>();
         services.AddScoped<DaemonManagerService>();
 
-        services.AddSingleton<FrameSourceConfigurationService>();
-        services.AddHostedService<FrameSourceConfigurationWorkers>();
+        services.AddSingleton<FrameSourceConfigurationHolderService>();
+        services.AddScoped<FrameSourceConfigurationService>();
+        services.AddHostedService<FrameSourceConfigurationWorker>();
+
+        services.AddHostedService<FrameStreamerWorker>();
     }
 }

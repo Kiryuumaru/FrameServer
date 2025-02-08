@@ -1,5 +1,7 @@
 ﻿using ApplicationBuilderHelpers;
 using CliFx.Attributes;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Presentation.Services;
 
 namespace Presentation.Commands;
@@ -16,7 +18,7 @@ public class DaemonInstallCommand : BaseCommand
     [CommandOption("password", 'p', Description = "Password of the service account.")]
     public string? Password { get; set; }
 
-    public override async ValueTask Run(ApplicationHostBuilder<WebApplicationBuilder> appBuilder, CancellationToken stoppingToken)
+    public override async ValueTask Run(ApplicationHostBuilder<HostApplicationBuilder> appBuilder, CancellationToken stoppingToken)
     {
         var appHost = appBuilder.Build();
 
