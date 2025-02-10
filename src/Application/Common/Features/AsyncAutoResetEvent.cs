@@ -8,17 +8,19 @@ using System.Threading.Tasks;
 namespace Application.Common.Features;
 
 [Disposable]
-public partial class AsyncManualResetEvent
+public partial class AsyncAutoResetEvent1
 {
     private readonly Lock _lock = new();
     private TaskCompletionSource<bool> _tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-    public AsyncManualResetEvent(bool initialState = false)
+    public AsyncAutoResetEvent1(bool initialState = false)
     {
         if (initialState)
         {
             _tcs.TrySetResult(true);
         }
+
+        AsyncAutoResetEvent ss = new();
     }
 
     public bool Wait(CancellationToken cancellationToken = default)

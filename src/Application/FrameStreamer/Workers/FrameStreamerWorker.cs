@@ -159,6 +159,7 @@ public class FrameStreamerWorker(ILogger<FrameStreamerWorker> logger, IServicePr
         Mat frame = new();
         frameSourceRuntime.SetFrameCallback(frame, (cancellationToken) =>
         {
+            var ss = frame.ToBytes(ext: ".png");
             if (frameSourceConfig.ShowWindow)
             {
                 try
