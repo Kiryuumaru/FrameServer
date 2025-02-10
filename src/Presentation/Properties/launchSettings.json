@@ -1,13 +1,14 @@
-﻿{
-  "$schema": "https://json.schemastore.org/launchsettings.json",
+{
   "profiles": {
     "Presentation": {
       "commandName": "Project",
-      "dotnetRunMessages": true,
+      "commandLineArgs": "--log-level debug",
       "environmentVariables": {
         "ASPNETCORE_ENVIRONMENT": "Development",
         "FRAME_SERVER_HOME_PATH": "C:\\Users\\Kiryuumaru\\source\\repos\\Kiryuumaru\\FrameServer\\src\\Presentation"
-      }
+      },
+      "dotnetRunMessages": true
     }
-  }
+  },
+  "$schema": "https://json.schemastore.org/launchsettings.json"
 }

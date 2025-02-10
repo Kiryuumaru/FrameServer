@@ -2,6 +2,7 @@ using Nuke.Common.IO;
 using NukeBuildHelpers;
 using NukeBuildHelpers.Common.Attributes;
 using NukeBuildHelpers.Entry;
+using NukeBuildHelpers.Entry.Enums;
 using NukeBuildHelpers.Entry.Extensions;
 using NukeBuildHelpers.Runner.Abstraction;
 using Serilog;

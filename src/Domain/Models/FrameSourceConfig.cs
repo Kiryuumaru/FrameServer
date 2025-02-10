@@ -14,6 +14,8 @@ public class FrameSourceConfig : IEquatable<FrameSourceConfig?>
 
     public bool Enabled { get; set; } = true;
 
+    public bool ShowWindow { get; set; } = false;
+
     public int? Height { get; set; }
 
     public int? Width { get; set; }
@@ -31,6 +33,7 @@ public class FrameSourceConfig : IEquatable<FrameSourceConfig?>
                Source == other.Source &&
                Port == other.Port &&
                Enabled == other.Enabled &&
+               ShowWindow == other.ShowWindow &&
                Height == other.Height &&
                Width == other.Width &&
                VideoApi == other.VideoApi;
@@ -38,7 +41,7 @@ public class FrameSourceConfig : IEquatable<FrameSourceConfig?>
 
     public override int GetHashCode()
     {
-        return HashCode.Combine(Source, Port, Enabled, Height, Width, VideoApi);
+        return HashCode.Combine(Source, Port, Enabled, ShowWindow, Height, Width, VideoApi);
     }
 
     public static bool operator ==(FrameSourceConfig? left, FrameSourceConfig? right)

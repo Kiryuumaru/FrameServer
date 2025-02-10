@@ -18,11 +18,11 @@ internal partial class FrameSourceConfigurationHolderService
 
     private readonly Locker _locker = new();
 
-    private readonly List<Action<FrameSourceAddedEventArgs>> _frameSourceAddedCallbacks = [];
-    private readonly List<Action<FrameSourceModifiedEventArgs>> _frameSourceModifiedCallbacks = [];
-    private readonly List<Action<FrameSourceRemovedEventArgs>> _frameSourceRemovedCallbacks = [];
+    private readonly List<Func<FrameSourceAddedEventArgs, CancellationToken, Task>> _frameSourceAddedCallbacks = [];
+    private readonly List<Func<FrameSourceModifiedEventArgs, CancellationToken, Task>> _frameSourceModifiedCallbacks = [];
+    private readonly List<Func<FrameSourceRemovedEventArgs, CancellationToken, Task>> _frameSourceRemovedCallbacks = [];
 
-    public Dictionary<string, FrameSourceConfig>? GetAllConfig()
+    public Dictionary<string, FrameSourceConfig> GetAllConfig()
     {
         return new Dictionary<string, FrameSourceConfig>(_frameSources);
     }
@@ -38,30 +38,29 @@ internal partial class FrameSourceConfigurationHolderService
         });
     }
 
-    private async Task InvokeCallback<TCallbackArgs>(List<Action<TCallbackArgs>> callbacks, TCallbackArgs eventArgs, CancellationToken cancellationToken)
+    private async Task InvokeCallback<TCallbackArgs>(List<Func<TCallbackArgs, CancellationToken, Task>> callbacks, TCallbackArgs eventArgs, CancellationToken cancellationToken)
     {
-        List<Action<TCallbackArgs>> callbackClone;
+        using var _ = await _locker.WaitAsync(cancellationToken);
+
+        List<Task> tasks = [];
+        foreach (var callback in callbacks)
         {
-            using var _ = await _locker.WaitAsync(cancellationToken);
-            callbackClone = [.. callbacks];
+            tasks.Add(callback(eventArgs, cancellationToken));
         }
-        foreach (var callback in callbackClone)
-        {
-            callback(eventArgs);
-        }
+        await Task.WhenAll(tasks);
     }
 
-    public async Task<IDisposable> SubscribeFrameSourceAddedCallback(Action<FrameSourceAddedEventArgs> action, CancellationToken cancellationToken)
+    public async Task<IDisposable> SubscribeFrameSourceAddedCallback(Func<FrameSourceAddedEventArgs, CancellationToken, Task> action, CancellationToken cancellationToken)
     {
         return await SubscribeCallback(() => _frameSourceAddedCallbacks.Add(action), () => _frameSourceAddedCallbacks.Remove(action), cancellationToken);
     }
 
-    public async Task<IDisposable> SubscribeFrameSourceModifiedCallback(Action<FrameSourceModifiedEventArgs> action, CancellationToken cancellationToken)
+    public async Task<IDisposable> SubscribeFrameSourceModifiedCallback(Func<FrameSourceModifiedEventArgs, CancellationToken, Task> action, CancellationToken cancellationToken)
     {
         return await SubscribeCallback(() => _frameSourceModifiedCallbacks.Add(action), () => _frameSourceModifiedCallbacks.Remove(action), cancellationToken);
     }
 
-    public async Task<IDisposable> SubscribeFrameSourceRemovedCallback(Action<FrameSourceRemovedEventArgs> action, CancellationToken cancellationToken)
+    public async Task<IDisposable> SubscribeFrameSourceRemovedCallback(Func<FrameSourceRemovedEventArgs, CancellationToken, Task> action, CancellationToken cancellationToken)
     {
         return await SubscribeCallback(() => _frameSourceRemovedCallbacks.Add(action), () => _frameSourceRemovedCallbacks.Remove(action), cancellationToken);
     }

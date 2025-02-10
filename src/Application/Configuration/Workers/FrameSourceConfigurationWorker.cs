@@ -18,6 +18,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Application.Configuration.Services;
 using System.Threading;
 using Application.Common.Features;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Application.Configuration.Workers;
 
@@ -176,26 +177,24 @@ public class FrameSourceConfigurationWorker(ILogger<FrameSourceConfigurationWork
 
             foreach (var oldEntry in oldFrameSources)
             {
+                string resolution = GetStringResolution(oldEntry.Value);
                 if (!newFrameSources.ContainsKey(oldEntry.Key))
                 {
                     _frameSources.Remove(oldEntry.Key);
-                    _logger.LogInformation("Frame source config removed: {RemovedFrameSourceKey}", oldEntry.Key);
+                    _logger.LogDebug("Frame source config removed: {RemovedFrameSourceKey}", oldEntry.Key);
+                    _logger.LogDebug("Removed config '{RemovedFrameSourceKey}': {@RemovedFrameSourceConfig}", oldEntry.Key, oldEntry.Value);
                     await frameSourceConfigurationService.InvokeFrameSourceRemovedCallback(new FrameSourceRemovedEventArgs(oldEntry.Key, oldEntry.Value), cancellationToken);
                 }
             }
 
             foreach (var newEntry in newFrameSources)
             {
-                string resolution = (newEntry.Value.Config.Width.HasValue && newEntry.Value.Config.Height.HasValue)
-                    ? $"{newEntry.Value.Config.Width}x{newEntry.Value.Config.Height}"
-                    : ((!newEntry.Value.Config.Width.HasValue && !newEntry.Value.Config.Height.HasValue)
-                        ? "default"
-                        : $"{(newEntry.Value.Config.Width.HasValue ? newEntry.Value.Config.Width : "default")}x{(newEntry.Value.Config.Height.HasValue ? newEntry.Value.Config.Height : "default")}");
+                string resolution = GetStringResolution(newEntry.Value.Config);
                 if (!oldFrameSources.TryGetValue(newEntry.Key, out var oldConfig))
                 {
                     _frameSources[newEntry.Key] = newEntry.Value.Config;
-                    _logger.LogInformation("Frame source config added '{AddedFrameSourceKey}': Source: {Source}, Resolution: {Resolution}, VideoAPI {VideoAPI}, Port: {Port}, Enabled: {Enabled}",
-                        newEntry.Key, newEntry.Value.Config.Source, resolution, newEntry.Value.Config.VideoApi, newEntry.Value.Config.Port, newEntry.Value.Config.Enabled);
+                    _logger.LogInformation("Frame source config added: {AddedFrameSourceKey}", newEntry.Key);
+                    _logger.LogDebug("Added config '{AddedFrameSourceKey}': {@AddedFrameSourceConfig}", newEntry.Key, newEntry.Value.Config);
                     await frameSourceConfigurationService.InvokeFrameSourceAddedCallback(new FrameSourceAddedEventArgs(newEntry.Key, newEntry.Value.Config), cancellationToken);
                 }
                 else
@@ -203,8 +202,8 @@ public class FrameSourceConfigurationWorker(ILogger<FrameSourceConfigurationWork
                     if (oldConfig != newEntry.Value.Config)
                     {
                         _frameSources[newEntry.Key] = newEntry.Value.Config;
-                        _logger.LogInformation("Frame source config modified '{ModifiedFrameSourceKey}': Source: {Source}, Resolution: {Resolution}, VideoAPI {VideoAPI}, Port: {Port}, Enabled: {Enabled}",
-                            newEntry.Key, newEntry.Value.Config.Source, resolution, newEntry.Value.Config.VideoApi, newEntry.Value.Config.Port, newEntry.Value.Config.Enabled);
+                        _logger.LogInformation("Frame source config modified: {ModifiedFrameSourceKey}", newEntry.Key);
+                        _logger.LogDebug("Modified config '{ModifiedFrameSourceKey}' Old: {@OldModifiedFrameSourceConfig}, New: {@NewModifiedFrameSourceConfig}", newEntry.Key, oldConfig, newEntry.Value.Config);
                         await frameSourceConfigurationService.InvokeFrameSourceModifiedCallback(new FrameSourceModifiedEventArgs(newEntry.Key, oldConfig, newEntry.Value.Config), cancellationToken);
                     }
                 }
@@ -214,6 +213,15 @@ public class FrameSourceConfigurationWorker(ILogger<FrameSourceConfigurationWork
         {
             _logger.LogError("Error on loading configs: {ErrorMessage}", ex.Message);
         }
+    }
+
+    private string GetStringResolution(FrameSourceConfig frameSourceConfig)
+    {
+        return (frameSourceConfig.Width.HasValue && frameSourceConfig.Height.HasValue)
+            ? $"{frameSourceConfig.Width}x{frameSourceConfig.Height}"
+            : ((!frameSourceConfig.Width.HasValue && !frameSourceConfig.Height.HasValue)
+                ? "default"
+                : $"{(frameSourceConfig.Width.HasValue ? frameSourceConfig.Width : "default")}x{(frameSourceConfig.Height.HasValue ? frameSourceConfig.Height : "default")}");
     }
 
     private static List<string> FixConfigFilter(string filter)

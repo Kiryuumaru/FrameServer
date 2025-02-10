@@ -22,13 +22,13 @@ internal partial class FrameSourceConfigurationService(IServiceProvider serviceP
 
     private readonly Locker _locker = new();
 
-    public Dictionary<string, FrameSourceConfig>? GetAllConfig()
+    public Dictionary<string, FrameSourceConfig> GetAllConfig()
     {
         var frameSourceConfigurationService = _serviceProvider.GetRequiredService<FrameSourceConfigurationHolderService>();
         return frameSourceConfigurationService.GetAllConfig();
     }
 
-    public async Task<IDisposable> SubscribeFrameSourceAddedCallback(Action<FrameSourceAddedEventArgs> action, CancellationToken cancellationToken)
+    public async Task<IDisposable> SubscribeFrameSourceAddedCallback(Func<FrameSourceAddedEventArgs, CancellationToken, Task> action, CancellationToken cancellationToken)
     {
         var frameSourceConfigurationService = _serviceProvider.GetRequiredService<FrameSourceConfigurationHolderService>();
         var disposable = await frameSourceConfigurationService.SubscribeFrameSourceAddedCallback(action, cancellationToken);
@@ -37,7 +37,7 @@ internal partial class FrameSourceConfigurationService(IServiceProvider serviceP
         return disposable;
     }
 
-    public async Task<IDisposable> SubscribeFrameSourceModifiedCallback(Action<FrameSourceModifiedEventArgs> action, CancellationToken cancellationToken)
+    public async Task<IDisposable> SubscribeFrameSourceModifiedCallback(Func<FrameSourceModifiedEventArgs, CancellationToken, Task> action, CancellationToken cancellationToken)
     {
         var frameSourceConfigurationService = _serviceProvider.GetRequiredService<FrameSourceConfigurationHolderService>();
         var disposable = await frameSourceConfigurationService.SubscribeFrameSourceModifiedCallback(action, cancellationToken);
@@ -46,7 +46,7 @@ internal partial class FrameSourceConfigurationService(IServiceProvider serviceP
         return disposable;
     }
 
-    public async Task<IDisposable> SubscribeFrameSourceRemovedCallback(Action<FrameSourceRemovedEventArgs> action, CancellationToken cancellationToken)
+    public async Task<IDisposable> SubscribeFrameSourceRemovedCallback(Func<FrameSourceRemovedEventArgs, CancellationToken, Task> action, CancellationToken cancellationToken)
     {
         var frameSourceConfigurationService = _serviceProvider.GetRequiredService<FrameSourceConfigurationHolderService>();
         var disposable = await frameSourceConfigurationService.SubscribeFrameSourceRemovedCallback(action, cancellationToken);

@@ -1,6 +1,8 @@
 ﻿using Application.Common.Extensions;
 using Application.Common.Features;
 using Application.Configuration.Services;
+using Application.FrameStreamer.Features;
+using DisposableHelpers.Attributes;
 using Domain.Events;
 using Domain.Models;
 using Microsoft.Extensions.DependencyInjection;
@@ -8,6 +10,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using OpenCvSharp;
 using System;
+using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Diagnostics.Tracing;
 using System.Linq;
@@ -18,22 +21,30 @@ namespace Application.FrameStreamer.Workers;
 
 public class FrameStreamerWorker(ILogger<FrameStreamerWorker> logger, IServiceProvider serviceProvider) : BackgroundService
 {
-    private class FrameSourceRuntime
+    private class FrameSourceRuntimeLifetime(FrameSourceRuntime frameSourceRuntime)
     {
-        public Locker Locker { get; } = new();
+        public FrameSourceRuntime FrameSourceRuntime { get; } = frameSourceRuntime;
 
-        public required FrameSourceConfig FrameSourceConfig { get; set; }
+        public GateKeeper InitializedGate { get; } = new(false);
 
-        public required VideoCapture VideoCapture { get; set; }
+        public GateKeeper LifetimeGate { get; } = new(true);
+
+        public async Task Destroy(CancellationToken cancellationToken)
+        {
+            await InitializedGate.WaitForOpen(cancellationToken);
+            await FrameSourceRuntime.DisposeAndWaitStreamClose(cancellationToken);
+            await LifetimeGate.WaitForClosed(cancellationToken);
+        }
     }
+
+    private readonly TimeSpan _openFrameSourceTimeout = TimeSpan.FromSeconds(30);
 
     private readonly ILogger<FrameStreamerWorker> _logger = logger;
     private readonly IServiceProvider _serviceProvider = serviceProvider;
 
     private readonly Locker _locker = new();
-    private readonly Dictionary<string, FrameSourceRuntime> _nameFlatMap = [];
-    private readonly Dictionary<string, FrameSourceRuntime> _sourceFlatMap = [];
-    private readonly Dictionary<int, FrameSourceRuntime> _portFlatMap = [];
+    private readonly Dictionary<string, FrameSourceRuntimeLifetime> _sourceFlatMap = [];
+    private readonly Dictionary<int, FrameSourceRuntimeLifetime> _portFlatMap = [];
 
     protected override Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -46,7 +57,7 @@ public class FrameStreamerWorker(ILogger<FrameStreamerWorker> logger, IServicePr
         using var _ = _logger.BeginScopeMap(nameof(FrameStreamerWorker), nameof(ExecuteAsyncAndForget));
 
         Cv2.SetLogLevel(OpenCvSharp.LogLevel.SILENT);
-        Cv2.SetBreakOnError(true);
+        Cv2.SetBreakOnError(false);
 
         var frameSourceConfigurationService = _serviceProvider.GetRequiredService<FrameSourceConfigurationService>();
 
@@ -64,83 +75,164 @@ public class FrameStreamerWorker(ILogger<FrameStreamerWorker> logger, IServicePr
         });
     }
 
-    private void FrameSourceAddedCallback(FrameSourceAddedEventArgs eventArgs)
+    private async Task FrameSourceAddedCallback(FrameSourceAddedEventArgs eventArgs, CancellationToken cancellationToken)
     {
         using var _ = _logger.BeginScopeMap(nameof(FrameStreamerWorker), nameof(FrameSourceAddedCallback));
+        using var lockObj = await _locker.WaitAsync(cancellationToken);
 
-        StartSource(eventArgs.NewConfig).Forget();
+        if (_sourceFlatMap.TryGetValue(eventArgs.Key, out var frameSourceStream))
+        {
+            _logger.LogDebug("Destroying old frame source {FrameSourceKey}", eventArgs.Key);
+            await frameSourceStream.Destroy(cancellationToken);
+            _sourceFlatMap.Remove(eventArgs.Key);
+        }
 
-        _logger.LogInformation("Frame source added: Key={Key}, Source={Source}, Port={Port}, Enabled={Enabled}, Height={Height}, Width={Width}",
-            eventArgs.Key, eventArgs.NewConfig.Source, eventArgs.NewConfig.Port, eventArgs.NewConfig.Enabled, eventArgs.NewConfig.Height, eventArgs.NewConfig.Width);
+        _logger.LogDebug("Adding frame source {FrameSourceKey}", eventArgs.Key);
+        frameSourceStream = new(new(eventArgs.NewConfig));
+        _sourceFlatMap.Add(eventArgs.Key, frameSourceStream);
+
+        if (eventArgs.NewConfig.Enabled)
+        {
+            _logger.LogDebug("Enabling frame source {FrameSourceKey}", eventArgs.Key);
+            StartSource(frameSourceStream, cancellationToken).Forget();
+        }
+        else
+        {
+            _logger.LogDebug("Disabling frame source {FrameSourceKey}", eventArgs.Key);
+            frameSourceStream.LifetimeGate.SetClosed();
+        }
     }
 
-    private void FrameSourceModifiedCallback(FrameSourceModifiedEventArgs eventArgs)
+    private async Task FrameSourceModifiedCallback(FrameSourceModifiedEventArgs eventArgs, CancellationToken cancellationToken)
     {
         using var _ = _logger.BeginScopeMap(nameof(FrameStreamerWorker), nameof(FrameSourceModifiedCallback));
+        using var lockObj = await _locker.WaitAsync(cancellationToken);
 
-        _logger.LogInformation("Frame source modified: Key={Key}, OldSource={OldSource}, OldPort={OldPort}, OldEnabled={OldEnabled}, OldHeight={OldHeight}, OldWidth={OldWidth}, NewSource={NewSource}, NewPort={NewPort}, NewEnabled={NewEnabled}, NewHeight={NewHeight}, NewWidth={NewWidth}",
-            eventArgs.Key, eventArgs.OldConfig.Source, eventArgs.OldConfig.Port, eventArgs.OldConfig.Enabled, eventArgs.OldConfig.Height, eventArgs.OldConfig.Width,
-            eventArgs.NewConfig.Source, eventArgs.NewConfig.Port, eventArgs.NewConfig.Enabled, eventArgs.NewConfig.Height, eventArgs.NewConfig.Width);
+        if (_sourceFlatMap.TryGetValue(eventArgs.Key, out var frameSourceStream))
+        {
+            _logger.LogDebug("Destroying old frame source {FrameSourceKey}", eventArgs.Key);
+            await frameSourceStream.Destroy(cancellationToken);
+            _sourceFlatMap.Remove(eventArgs.Key);
+        }
+
+        _logger.LogDebug("Re-adding frame source {FrameSourceKey}", eventArgs.Key);
+        frameSourceStream = new(new(eventArgs.NewConfig));
+        _sourceFlatMap.Add(eventArgs.Key, frameSourceStream);
+
+        if (eventArgs.NewConfig.Enabled)
+        {
+            _logger.LogDebug("Enabling frame source {FrameSourceKey}", eventArgs.Key);
+            StartSource(frameSourceStream, cancellationToken).Forget();
+        }
+        else
+        {
+            _logger.LogDebug("Disabling frame source {FrameSourceKey}", eventArgs.Key);
+            frameSourceStream.InitializedGate.SetOpen();
+            frameSourceStream.LifetimeGate.SetClosed();
+        }
     }
 
-    private void FrameSourceRemovedCallback(FrameSourceRemovedEventArgs eventArgs)
+    private async Task FrameSourceRemovedCallback(FrameSourceRemovedEventArgs eventArgs, CancellationToken cancellationToken)
     {
         using var _ = _logger.BeginScopeMap(nameof(FrameStreamerWorker), nameof(FrameSourceRemovedCallback));
+        using var lockObj = await _locker.WaitAsync(cancellationToken);
 
-        _logger.LogInformation("Frame source removed: Key={Key}, Source={Source}, Port={Port}, Enabled={Enabled}, Height={Height}, Width={Width}",
-            eventArgs.Key, eventArgs.OldConfig.Source, eventArgs.OldConfig.Port, eventArgs.OldConfig.Enabled, eventArgs.OldConfig.Height, eventArgs.OldConfig.Width);
+        if (_sourceFlatMap.TryGetValue(eventArgs.Key, out var frameSourceStream))
+        {
+            _logger.LogDebug("Destroying old frame source {FrameSourceKey}", eventArgs.Key);
+            await frameSourceStream.Destroy(cancellationToken);
+            _sourceFlatMap.Remove(eventArgs.Key);
+        }
     }
 
-    private Task StartSource(FrameSourceConfig frameSourceConfig)
+    private async Task StartSource(FrameSourceRuntimeLifetime frameSourceRuntimeLifetime, CancellationToken cancellationToken)
     {
-        return ThreadHelpers.WaitThread(() =>
+        using var _ = _logger.BeginScopeMap(nameof(FrameStreamerWorker), nameof(StartSource), new Dictionary<string, object?>
         {
-            using var _ = _logger.BeginScopeMap(nameof(FrameStreamerWorker), nameof(StartSource), new Dictionary<string, object?>
+            ["FrameSourceConfig"] = frameSourceRuntimeLifetime.FrameSourceRuntime.FrameSourceConfig
+        });
+
+        FrameSourceRuntime frameSourceRuntime = frameSourceRuntimeLifetime.FrameSourceRuntime;
+        FrameSourceConfig frameSourceConfig = frameSourceRuntime.FrameSourceConfig;
+        string source = frameSourceRuntimeLifetime.FrameSourceRuntime.FrameSourceConfig.Source;
+
+        Mat frame = new();
+        frameSourceRuntime.SetFrameCallback(frame, (cancellationToken) =>
+        {
+            if (frameSourceConfig.ShowWindow)
             {
-                ["FrameSourceConfig"] = frameSourceConfig
-            });
+                try
+                {
+                    Cv2.ImShow($"Frame Server Source {source}", frame);
+                }
+                catch { }
+            }
+            return Task.CompletedTask;
+        });
+
+        bool isRunning() => !cancellationToken.IsCancellationRequested && !frameSourceRuntime.IsDisposedOrDisposing;
+
+        while (isRunning())
+        {
+            while (isRunning())
+            {
+                try
+                {
+                    _logger.LogInformation("Opening frame source '{FrameSource}'", source);
+
+                    await frameSourceRuntime.Open(cancellationToken.WithTimeout(_openFrameSourceTimeout));
+
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    if (!isRunning()) break;
+
+                    _logger.LogError("Failed to open frame source '{FrameSource}': {ErrorMessage}, Retrying in 5 seconds...", source, ex.Message);
+
+                    await TaskUtils.DelayAndForget(5000, cancellationToken);
+                }
+            }
+
+            if (!isRunning()) break;
+
+            frameSourceRuntimeLifetime.InitializedGate.SetOpen();
 
             try
             {
-                VideoCapture videoCapture = new();
-                videoCapture.SetExceptionMode(true);
-                VideoCaptureAPIs videoCaptureAPIs = VideoCaptureAPIs.ANY;
-                if (!string.IsNullOrEmpty(frameSourceConfig.VideoApi))
-                {
-                    videoCaptureAPIs = OpenCVExtensions.StringToVideoCaptureApi(frameSourceConfig.VideoApi);
-                }
-                bool isOpen = false;
-                if (int.TryParse(frameSourceConfig.Source, out int cameraSource))
-                {
-                    isOpen = videoCapture.Open(cameraSource, videoCaptureAPIs);
-                }
-                else
-                {
-                    isOpen = videoCapture.Open(frameSourceConfig.Source, videoCaptureAPIs);
-                }
+                _logger.LogInformation("Starting frame source '{FrameSource}'", source);
 
-                if (!isOpen)
-                {
-                    throw new Exception($"Failed to open frame source '{frameSourceConfig.Source}'");
-                }
+                await frameSourceRuntime.Start(cancellationToken);
 
-                Mat frame = new();
-                while (videoCapture.IsOpened())
-                {
-                    var hasRead = videoCapture.Read(frame);
+                if (!isRunning()) break;
 
-                    if (hasRead && !frame.Empty())
-                    {
-                        Cv2.ImShow("Frame", frame);
-                    }
-
-                    Cv2.WaitKey(1);
-                }
+                _logger.LogInformation("Frame source '{FrameSource}' ended. Starting again in 5 seconds...", source);
             }
             catch (Exception ex)
             {
-                _logger.LogError("Error on start frame source: {ErrorMessage}", ex.Message);
+                if (!isRunning()) break;
+
+                _logger.LogError("Failed to start frame source '{FrameSource}': {ErrorMessage}, Retrying in 5 seconds...", source, ex.Message);
             }
-        });
+
+            await TaskUtils.DelayAndForget(5000, cancellationToken);
+        }
+
+        if (frameSourceConfig.ShowWindow)
+        {
+            try
+            {
+                Cv2.DestroyWindow($"Frame Server Source {source}");
+            }
+            catch { }
+        }
+
+        InvokerUtils.RunAndForget(frameSourceRuntime.Dispose);
+        InvokerUtils.RunAndForget(frame.Release);
+        InvokerUtils.RunAndForget(frame.Dispose);
+
+        frameSourceRuntimeLifetime.LifetimeGate.SetClosed();
+
+        _logger.LogInformation("Frame source '{FrameSource}' terminated", source);
     }
 }
