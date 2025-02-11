@@ -5,20 +5,24 @@ namespace Application.Common.Features;
 public class ValueKeeper<T>
 {
     private readonly AsyncManualResetEvent _waiterEvent = new(false);
+    private readonly Lock _locker = new();
 
     public T? Value { get; private set; }
 
     public void SetValue(T? value)
     {
-        Value = value;
+        lock (_locker)
+        {
+            Value = value;
 
-        if (value != null)
-        {
-            _waiterEvent.Set();
-        }
-        else
-        {
-            _waiterEvent.Reset();
+            if (value != null)
+            {
+                _waiterEvent.Set();
+            }
+            else
+            {
+                _waiterEvent.Reset();
+            }
         }
     }
 
