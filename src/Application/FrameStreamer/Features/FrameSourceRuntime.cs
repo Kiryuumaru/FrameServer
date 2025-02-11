@@ -16,6 +16,8 @@ public partial class FrameSourceRuntime(FrameSourceConfig frameSourceConfig)
 {
     private readonly FrameSourceStream _frameSourceStream = new();
 
+    private readonly Locker _locker = new();
+
     public FrameSourceConfig FrameSourceConfig { get; private set; } = frameSourceConfig;
 
     public void SetFrameCallback(Mat frame, Func<CancellationToken, Task> callback)
@@ -25,11 +27,13 @@ public partial class FrameSourceRuntime(FrameSourceConfig frameSourceConfig)
 
     public async Task Open(CancellationToken cancellationToken)
     {
+        using var _ = await _locker.WaitAsync(cancellationToken);
         await _frameSourceStream.Open(FrameSourceConfig, cancellationToken);
     }
 
     public async Task Start(CancellationToken cancellationToken)
     {
+        using var _ = await _locker.WaitAsync(cancellationToken);
         await _frameSourceStream.Start(cancellationToken);
     }
 
@@ -44,7 +48,6 @@ public partial class FrameSourceRuntime(FrameSourceConfig frameSourceConfig)
     public async Task DisposeAndWaitStreamClose(CancellationToken cancellationToken)
     {
         Dispose();
-        await _frameSourceStream.OpenGate.WaitForClosed(cancellationToken);
-        await _frameSourceStream.StartGate.WaitForClosed(cancellationToken);
+        using var _ = await _locker.WaitAsync(cancellationToken);
     }
 }

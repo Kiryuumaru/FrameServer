@@ -25,13 +25,13 @@ public class FrameStreamerWorker(ILogger<FrameStreamerWorker> logger, IServicePr
     {
         public FrameSourceRuntime FrameSourceRuntime { get; } = frameSourceRuntime;
 
-        public GateKeeper InitializedGate { get; } = new(false);
+        //public GateKeeper InitializedGate { get; } = new(false);
 
         public GateKeeper LifetimeGate { get; } = new(true);
 
         public async Task Destroy(CancellationToken cancellationToken)
         {
-            await InitializedGate.WaitForOpen(cancellationToken);
+            //await InitializedGate.WaitForOpen(cancellationToken);
             await FrameSourceRuntime.DisposeAndWaitStreamClose(cancellationToken);
             await LifetimeGate.WaitForClosed(cancellationToken);
         }
@@ -127,7 +127,6 @@ public class FrameStreamerWorker(ILogger<FrameStreamerWorker> logger, IServicePr
         else
         {
             _logger.LogDebug("Disabling frame source {FrameSourceKey}", eventArgs.Key);
-            frameSourceStream.InitializedGate.SetOpen();
             frameSourceStream.LifetimeGate.SetClosed();
         }
     }
@@ -159,14 +158,16 @@ public class FrameStreamerWorker(ILogger<FrameStreamerWorker> logger, IServicePr
         Mat frame = new();
         frameSourceRuntime.SetFrameCallback(frame, (cancellationToken) =>
         {
-            var ss = frame.ToBytes(ext: ".png");
+            //var ss = frame.ToBytes(ext: ".png");
             if (frameSourceConfig.ShowWindow)
             {
+                Console.WriteLine("SHOWWWW");
                 try
                 {
                     Cv2.ImShow($"Frame Server Source {source}", frame);
                 }
                 catch { }
+                Console.WriteLine("SHOWWWWNNNNNNN");
             }
             return Task.CompletedTask;
         });
@@ -196,8 +197,6 @@ public class FrameStreamerWorker(ILogger<FrameStreamerWorker> logger, IServicePr
             }
 
             if (!isRunning()) break;
-
-            frameSourceRuntimeLifetime.InitializedGate.SetOpen();
 
             try
             {

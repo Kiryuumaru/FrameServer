@@ -25,10 +25,6 @@ public partial class FrameSourceStream
 
     public VideoCapture VideoCapture { get; set; } = new();
 
-    public GateKeeper OpenGate { get; set; } = new();
-
-    public GateKeeper StartGate { get; set; } = new();
-
     public void SetFrameCallback(Mat frame, Func<CancellationToken, Task> callback)
     {
         _frameCallbackMat = frame;
@@ -37,11 +33,9 @@ public partial class FrameSourceStream
 
     public Task Open(FrameSourceConfig frameSourceConfig, CancellationToken cancellationToken)
     {
-        OpenGate.SetClosed();
-
         FrameSourceConfig = frameSourceConfig;
 
-        CancellationToken ct = CancelWhenDisposing(cancellationToken);
+        CancellationToken disposingToken = CancelWhenDisposing(cancellationToken);
 
         string source = frameSourceConfig.Source;
         VideoCaptureAPIs videoCaptureAPIs = VideoCaptureAPIs.ANY;
@@ -52,7 +46,7 @@ public partial class FrameSourceStream
 
         return ThreadHelpers.WaitThread(async () =>
         {
-            using var _ = await _locker.WaitAsync(ct);
+            using var _ = await _locker.WaitAsync(disposingToken);
 
             if (!VideoCapture.IsDisposed)
             {
@@ -61,17 +55,10 @@ public partial class FrameSourceStream
                 VideoCapture = new();
             }
 
-            var openToken = ct.Register(() =>
-            {
-                InvokerUtils.RunAndForget(VideoCapture.Release);
-                InvokerUtils.RunAndForget(VideoCapture.Dispose);
-            });
-
             try
             {
-                if (VideoCapture.IsDisposed || ct.IsCancellationRequested)
+                if (VideoCapture.IsDisposed || disposingToken.IsCancellationRequested)
                 {
-                    OpenGate.SetClosed();
                     return;
                 }
 
@@ -102,9 +89,7 @@ public partial class FrameSourceStream
                         }
                     }
                     catch { }
-                }, ct);
-
-                OpenGate.SetOpen(isOpen);
+                }, disposingToken);
 
                 if (!isOpen)
                 {
@@ -117,16 +102,10 @@ public partial class FrameSourceStream
                 InvokerUtils.RunAndForget(VideoCapture.Dispose);
                 VideoCapture = new();
 
-                OpenGate.SetClosed();
-
                 throw;
             }
-            finally
-            {
-                openToken.Unregister();
-            }
 
-        }, ct);
+        }, disposingToken);
     }
 
     public Task Start(CancellationToken cancellationToken)
@@ -136,19 +115,19 @@ public partial class FrameSourceStream
             throw new Exception("Frame source is not open");
         }
 
-        StartGate.SetOpen();
-
-        CancellationToken ct = CancelWhenDisposing(cancellationToken);
+        CancellationToken disposingToken = CancelWhenDisposing(cancellationToken);
 
         return ThreadHelpers.WaitThread(async () =>
         {
+            using var _ = await _locker.WaitAsync(disposingToken);
+
             Mat rawFrame = new();
             Mat resizeFrame = new();
             Mat finalFrame = new();
 
             bool isRunning() =>
                 FrameSourceConfig != null &&
-                !ct.IsCancellationRequested &&
+                !disposingToken.IsCancellationRequested &&
                 !VideoCapture.IsDisposed &&
                 VideoCapture.IsOpened();
 
@@ -206,7 +185,7 @@ public partial class FrameSourceStream
                 {
                     int newHeight = targetHeight;
                     int newWidth = (int)(targetHeight * aspectRatioSrc);
-                    Cv2.Resize(rawFrame, resizeFrame, new Size(newWidth, newHeight));
+                    Cv2.Resize(rawFrame, resizeFrame, new Size(newWidth, newHeight), interpolation: InterpolationFlags.Area);
 
                     int xOffset = (newWidth - targetWidth) / 2;
                     cropRect = new Rect(xOffset, 0, targetWidth, targetHeight);
@@ -215,7 +194,7 @@ public partial class FrameSourceStream
                 {
                     int newWidth = targetWidth;
                     int newHeight = (int)(targetWidth / aspectRatioSrc);
-                    Cv2.Resize(rawFrame, resizeFrame, new Size(newWidth, newHeight));
+                    Cv2.Resize(rawFrame, resizeFrame, new Size(newWidth, newHeight), interpolation: InterpolationFlags.Area);
 
                     int yOffset = (newHeight - targetHeight) / 2;
                     cropRect = new Rect(0, yOffset, targetWidth, targetHeight);
@@ -230,8 +209,6 @@ public partial class FrameSourceStream
             {
                 while (isRunning())
                 {
-                    using var _ = await _locker.WaitAsync(ct);
-
                     if (!isRunning())
                     {
                         break;
@@ -253,13 +230,11 @@ public partial class FrameSourceStream
                     {
                         procFrame();
 
-                        await _frameCallback(ct);
+                        await _frameCallback(disposingToken);
                     }
 
                     Cv2.WaitKey(1);
                 }
-
-                Console.WriteLine($"Stopped1 {FrameSourceConfig.Source}");
             }
             finally
             {
@@ -269,13 +244,9 @@ public partial class FrameSourceStream
                 InvokerUtils.RunAndForget(rawFrame.Dispose);
                 InvokerUtils.RunAndForget(resizeFrame.Dispose);
                 InvokerUtils.RunAndForget(finalFrame.Dispose);
-
-                Console.WriteLine($"Stopped2 {FrameSourceConfig.Source}");
-
-                StartGate.SetClosed();
             }
 
-        }, ct);
+        }, disposingToken);
     }
 
     protected void Dispose(bool disposing)
@@ -284,14 +255,9 @@ public partial class FrameSourceStream
         {
             Task.Run(async () =>
             {
-                Console.WriteLine($"Disposee1 {FrameSourceConfig?.Source}");
                 using var _ = await _locker.WaitAsync(default);
-                Console.WriteLine($"Disposee2 {FrameSourceConfig?.Source}");
                 InvokerUtils.RunAndForget(VideoCapture.Release);
-                Console.WriteLine($"Disposee3 {FrameSourceConfig?.Source}");
                 InvokerUtils.RunAndForget(VideoCapture.Dispose);
-                Console.WriteLine($"Disposee4 {FrameSourceConfig?.Source}");
-                OpenGate.SetClosed();
             });
         }
     }
