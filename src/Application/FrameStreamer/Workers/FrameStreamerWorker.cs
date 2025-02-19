@@ -25,13 +25,10 @@ public class FrameStreamerWorker(ILogger<FrameStreamerWorker> logger, IServicePr
     {
         public FrameSourceRuntime FrameSourceRuntime { get; } = frameSourceRuntime;
 
-        //public GateKeeper InitializedGate { get; } = new(false);
-
         public GateKeeper LifetimeGate { get; } = new(true);
 
         public async Task Destroy(CancellationToken cancellationToken)
         {
-            //await InitializedGate.WaitForOpen(cancellationToken);
             await FrameSourceRuntime.DisposeAndWaitStreamClose(cancellationToken);
             await LifetimeGate.WaitForClosed(cancellationToken);
         }
@@ -155,21 +152,18 @@ public class FrameStreamerWorker(ILogger<FrameStreamerWorker> logger, IServicePr
         FrameSourceConfig frameSourceConfig = frameSourceRuntime.FrameSourceConfig;
         string source = frameSourceRuntimeLifetime.FrameSourceRuntime.FrameSourceConfig.Source;
 
+        Locker callbackLocker = new();
+
         Mat frame = new();
-        frameSourceRuntime.SetFrameCallback(frame, (cancellationToken) =>
+        frameSourceRuntime.SetFrameCallback(frame, async (cancellationToken) =>
         {
+            using var callbackLock = await callbackLocker.WaitAsync(default);
+
             //var ss = frame.ToBytes(ext: ".png");
-            if (frameSourceConfig.ShowWindow)
+            if (frameSourceConfig.ShowWindow && isRunning())
             {
-                Console.WriteLine("SHOWWWW");
-                try
-                {
-                    Cv2.ImShow($"Frame Server Source {source}", frame);
-                }
-                catch { }
-                Console.WriteLine("SHOWWWWNNNNNNN");
+                Cv2.ImShow($"Frame Server Source {source}", frame);
             }
-            return Task.CompletedTask;
         });
 
         bool isRunning() => !cancellationToken.IsCancellationRequested && !frameSourceRuntime.IsDisposedOrDisposing;
@@ -218,18 +212,17 @@ public class FrameStreamerWorker(ILogger<FrameStreamerWorker> logger, IServicePr
             await TaskUtils.DelayAndForget(5000, cancellationToken);
         }
 
+        using var callbackLock = await callbackLocker.WaitAsync(default);
+
         if (frameSourceConfig.ShowWindow)
         {
-            try
-            {
-                Cv2.DestroyWindow($"Frame Server Source {source}");
-            }
-            catch { }
+            Cv2.DestroyWindow($"Frame Server Source {source}");
         }
 
         InvokerUtils.RunAndForget(frameSourceRuntime.Dispose);
         InvokerUtils.RunAndForget(frame.Release);
         InvokerUtils.RunAndForget(frame.Dispose);
+        InvokerUtils.RunAndForget(callbackLocker.Dispose);
 
         frameSourceRuntimeLifetime.LifetimeGate.SetClosed();
 
