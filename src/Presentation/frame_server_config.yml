@@ -8,26 +8,24 @@
 # - showWindow: A boolean value indicating whether to show the video window. Optional
 
 # Example configuration for a USB camera
-usb01:
-  enabled: true
-  showWindow: true
-  port: 23456
-  source: 0
-  videoApi: dshow
+# usb01:
+#   enabled: true
+#   showWindow: true
+#   port: 23456
+#   source: 0
+#   videoApi: dshow
   
 # Example configuration for a video file
-file01:
-  enabled: false
-  showWindow: true
-  height: 480
-  port: 23457
-  source: "D:\\Videos\\Anime Series\\Kimi no nawa.mp4"
+# file01:
+#   enabled: false
+#   showWindow: true
+#   height: 480
+#   port: 23457
+#   source: "D:\\Videos\\Anime Series\\Kimi no nawa.mp4"
   
 # Example configuration for an RTSP stream
 rtsp01_leander:
-  enabled: false
+  enabled: true
   showWindow: true
   port: 23458
-  height: 480
-  width: 640
   source: rtsp://root:Skunkw0rks@192.168.100.185/axis-media/media.amp

@@ -152,14 +152,14 @@ public class FrameStreamerWorker(ILogger<FrameStreamerWorker> logger, IServicePr
         FrameSourceConfig frameSourceConfig = frameSourceRuntime.FrameSourceConfig;
         string source = frameSourceRuntimeLifetime.FrameSourceRuntime.FrameSourceConfig.Source;
 
+        Mat frame = new();
         Locker callbackLocker = new();
 
-        Mat frame = new();
         frameSourceRuntime.SetFrameCallback(frame, async (cancellationToken) =>
         {
             using var callbackLock = await callbackLocker.WaitAsync(default);
 
-            //var ss = frame.ToBytes(ext: ".png");
+            var ss = frame.ToBytes(ext: ".png");
             if (frameSourceConfig.ShowWindow && isRunning())
             {
                 Cv2.ImShow($"Frame Server Source {source}", frame);

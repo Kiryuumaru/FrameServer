@@ -5,7 +5,7 @@
       "commandLineArgs": "--log-level debug",
       "environmentVariables": {
         "ASPNETCORE_ENVIRONMENT": "Development",
-        "FRAME_SERVER_HOME_PATH": "C:\\Users\\Kiryuumaru\\source\\repos\\Kiryuumaru\\FrameServer\\src\\Presentation"
+        "FRAME_SERVER_HOME_PATH": "C:\\Users\\Administrator\\source\\repos\\Kiryuumaru\\FrameServer\\src\\Presentation"
       },
       "dotnetRunMessages": true
     }
