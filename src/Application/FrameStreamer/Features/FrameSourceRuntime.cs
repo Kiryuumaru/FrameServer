@@ -23,7 +23,20 @@ public partial class FrameSourceRuntime
             FrameSourceConfig = frameSourceConfig
         };
 
-        frameSourceRuntime._frameSourceStream.SetFrameCallback(frameSourceRuntime._frame, frameSourceRuntime.FrameCallback);
+        bool IsRunning() =>
+            frameSourceRuntime.FrameSourceConfig != null &&
+            !frameSourceRuntime.IsDisposedOrDisposing &&
+            !frameSourceRuntime._frameSourceStream.VideoCapture.IsDisposed &&
+            frameSourceRuntime._frameSourceStream.VideoCapture.IsOpened();
+
+        frameSourceRuntime._frameSourceStream.SetFrameCallback(frameSourceRuntime._frame, async ct =>
+        {
+            if (!IsRunning()) return;
+            using var callbackLock = await frameSourceRuntime._callbackLocker.WaitAsync(default);
+            if (!IsRunning()) return;
+
+            await frameSourceRuntime.FrameCallback(ct);
+        });
         frameSourceRuntime.CancelWhenDisposing();
 
         return frameSourceRuntime;
@@ -36,19 +49,15 @@ public partial class FrameSourceRuntime
 
     public required FrameSourceConfig FrameSourceConfig { get; init; }
 
-    private async Task FrameCallback(CancellationToken cancellationToken)
+    private Task FrameCallback(CancellationToken cancellationToken)
     {
-        if (!IsRunning()) return;
-
-        using var callbackLock = await _callbackLocker.WaitAsync(default);
-
-        if (!IsRunning()) return;
-
         //var ss = _frame.ToBytes(ext: ".png");
         if (FrameSourceConfig.ShowWindow)
         {
             Cv2.ImShow($"Frame Server Source {FrameSourceConfig.Source}", _frame);
         }
+
+        return Task.CompletedTask;
     }
 
     public async Task Open(CancellationToken cancellationToken)
@@ -82,9 +91,4 @@ public partial class FrameSourceRuntime
         }
     }
 
-    private bool IsRunning() =>
-        FrameSourceConfig != null &&
-        !IsDisposedOrDisposing &&
-        !_frameSourceStream.VideoCapture.IsDisposed &&
-        _frameSourceStream.VideoCapture.IsOpened();
 }
