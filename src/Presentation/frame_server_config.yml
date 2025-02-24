@@ -1,31 +1,37 @@
 # This file is used to configure the frame server. It is a YAML file that contains the following keys:
 # - port: The port number on which the server will listen. This is an integer value. Required
-# - source: The source of the video stream. This can be an integer value representing the index of the camera or a string value containing the URL of the RTSP stream. Required
+# - source: The source of the video stream. This can be an integer value representing the index of the camera 
+#   or a string value containing the URL of the RTSP stream or file path. Required
 # - height: The height of the video frame. This is an integer value representing the number of pixels. Optional
 # - width: The width of the video frame. This is an integer value representing the number of pixels. Optional
 # - videoApi: The video API to use. This is a string value that specifies the video API (e.g., 'dshow' for DirectShow). Optional
 # - enabled: A boolean value indicating whether the configuration is enabled. Optional
 # - showWindow: A boolean value indicating whether to show the video window. Optional
 
-# Example configuration for a USB camera
-# usb01:
-#   enabled: true
-#   showWindow: true
-#   port: 23456
-#   source: 0
-#   videoApi: dshow
+sources:
+
+  # Example configuration for a USB camera
+  usb01:
+    enabled: true
+    showWindow: true
+    port: 23456
+    width: 480
+    fps: 61
+    source: 0
+    videoApi: dshow
   
-# Example configuration for a video file
-# file01:
-#   enabled: false
-#   showWindow: true
-#   height: 480
-#   port: 23457
-#   source: "D:\\Videos\\Anime Series\\Kimi no nawa.mp4"
+  # Example configuration for a video file
+  # file01:
+  #   enabled: false
+  #   showWindow: true
+  #   height: 480
+  #   port: 23457
+  #   source: "D:\\Videos\\Anime Series\\Kimi no nawa.mp4"
   
-# Example configuration for an RTSP stream
-rtsp01_leander:
-  enabled: true
-  showWindow: true
-  port: 23458
-  source: rtsp://root:Skunkw0rks@192.168.100.185/axis-media/media.amp
+  # Example configuration for an RTSP stream
+  # rtsp01_leander:
+  #   enabled: true
+  #   fps: 30
+  #   showWindow: true
+  #   port: 23458
+  #   source: rtsp://root:Skunkw0rks@192.168.100.185/axis-media/media.amp

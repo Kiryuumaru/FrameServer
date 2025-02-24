@@ -16,7 +16,13 @@ public partial class Locker : IDisposable
     public async Task<IDisposable> WaitAsync(CancellationToken cancellationToken)
     {
         await _semaphore.WaitAsync(cancellationToken);
-        return new Disposable(disposing => _semaphore.Release());
+        return new Disposable(disposing =>
+        {
+            if (disposing)
+            {
+                _semaphore.Release();
+            }
+        });
     }
 
     protected void Dispose(bool disposing)

@@ -19,6 +19,7 @@ using Application.Configuration.Services;
 using System.Threading;
 using Application.Common.Features;
 using Microsoft.Extensions.Logging.Abstractions;
+using Application.Configuration.Models;
 
 namespace Application.Configuration.Workers;
 
@@ -120,10 +121,10 @@ public class FrameSourceConfigurationWorker(ILogger<FrameSourceConfigurationWork
                 using var reader = new StreamReader(file);
                 try
                 {
-                    var fileConfig = _deserializer.Deserialize<Dictionary<string, FrameSourceConfig>>(reader);
+                    var fileConfig = _deserializer.Deserialize<FrameServerConfigFile>(reader);
                     if (fileConfig != null)
                     {
-                        foreach (var kvp in fileConfig)
+                        foreach (var kvp in fileConfig.Sources)
                         {
                             newFrameSources[kvp.Key] = (file, kvp.Value);
                         }

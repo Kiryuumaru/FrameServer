@@ -1,9 +1,11 @@
-﻿using Application.Common.Features;
+﻿using Application.Common.Extensions;
+using Application.Common.Features;
 using DisposableHelpers.Attributes;
 using Domain.Models;
 using OpenCvSharp;
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -12,17 +14,41 @@ using System.Threading.Tasks;
 namespace Application.FrameStreamer.Features;
 
 [Disposable]
-public partial class FrameSourceRuntime(FrameSourceConfig frameSourceConfig)
+public partial class FrameSourceRuntime
 {
-    private readonly FrameSourceStream _frameSourceStream = new();
-
-    private readonly Locker _locker = new();
-
-    public FrameSourceConfig FrameSourceConfig { get; private set; } = frameSourceConfig;
-
-    public void SetFrameCallback(Mat frame, Func<CancellationToken, Task> callback)
+    public static FrameSourceRuntime Create(FrameSourceConfig frameSourceConfig)
     {
-        _frameSourceStream.SetFrameCallback(frame, callback);
+        var frameSourceRuntime = new FrameSourceRuntime()
+        {
+            FrameSourceConfig = frameSourceConfig
+        };
+
+        frameSourceRuntime._frameSourceStream.SetFrameCallback(frameSourceRuntime._frame, frameSourceRuntime.FrameCallback);
+        frameSourceRuntime.CancelWhenDisposing();
+
+        return frameSourceRuntime;
+    }
+
+    private readonly FrameSourceStream _frameSourceStream = new();
+    private readonly Locker _locker = new();
+    private readonly Locker _callbackLocker = new();
+    private readonly Mat _frame = new();
+
+    public required FrameSourceConfig FrameSourceConfig { get; init; }
+
+    private async Task FrameCallback(CancellationToken cancellationToken)
+    {
+        if (!IsRunning()) return;
+
+        using var callbackLock = await _callbackLocker.WaitAsync(default);
+
+        if (!IsRunning()) return;
+
+        //var ss = _frame.ToBytes(ext: ".png");
+        if (FrameSourceConfig.ShowWindow)
+        {
+            Cv2.ImShow($"Frame Server Source {FrameSourceConfig.Source}", _frame);
+        }
     }
 
     public async Task Open(CancellationToken cancellationToken)
@@ -37,17 +63,28 @@ public partial class FrameSourceRuntime(FrameSourceConfig frameSourceConfig)
         await _frameSourceStream.Start(cancellationToken);
     }
 
-    protected void Dispose(bool disposing)
+    protected async ValueTask DisposeAsync(bool disposing)
     {
         if (disposing)
         {
-            _frameSourceStream.Dispose();
+            await _frameSourceStream.DisposeAsync();
+
+            using var callbackLocker = await _callbackLocker.WaitAsync(default);
+            using var locker = await _locker.WaitAsync(default);
+
+            if (FrameSourceConfig.ShowWindow)
+            {
+                Cv2.DestroyWindow($"Frame Server Source {FrameSourceConfig.Source}");
+            }
+
+            InvokerUtils.RunAndForget(_frame.Release);
+            InvokerUtils.RunAndForget(_frame.Dispose);
         }
     }
 
-    public async Task DisposeAndWaitStreamClose(CancellationToken cancellationToken)
-    {
-        Dispose();
-        using var _ = await _locker.WaitAsync(cancellationToken);
-    }
+    private bool IsRunning() =>
+        FrameSourceConfig != null &&
+        !IsDisposedOrDisposing &&
+        !_frameSourceStream.VideoCapture.IsDisposed &&
+        _frameSourceStream.VideoCapture.IsOpened();
 }

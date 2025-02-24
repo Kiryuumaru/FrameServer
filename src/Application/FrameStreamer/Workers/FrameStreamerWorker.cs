@@ -23,13 +23,18 @@ public class FrameStreamerWorker(ILogger<FrameStreamerWorker> logger, IServicePr
 {
     private class FrameSourceRuntimeLifetime(FrameSourceRuntime frameSourceRuntime)
     {
+        public static FrameSourceRuntimeLifetime Create(FrameSourceConfig frameSourceConfig)
+        {
+            return new FrameSourceRuntimeLifetime(FrameSourceRuntime.Create(frameSourceConfig));
+        }
+
         public FrameSourceRuntime FrameSourceRuntime { get; } = frameSourceRuntime;
 
         public GateKeeper LifetimeGate { get; } = new(true);
 
         public async Task Destroy(CancellationToken cancellationToken)
         {
-            await FrameSourceRuntime.DisposeAndWaitStreamClose(cancellationToken);
+            await FrameSourceRuntime.DisposeAsync();
             await LifetimeGate.WaitForClosed(cancellationToken);
         }
     }
@@ -85,7 +90,7 @@ public class FrameStreamerWorker(ILogger<FrameStreamerWorker> logger, IServicePr
         }
 
         _logger.LogDebug("Adding frame source {FrameSourceKey}", eventArgs.Key);
-        frameSourceStream = new(new(eventArgs.NewConfig));
+        frameSourceStream = FrameSourceRuntimeLifetime.Create(eventArgs.NewConfig);
         _sourceFlatMap.Add(eventArgs.Key, frameSourceStream);
 
         if (eventArgs.NewConfig.Enabled)
@@ -113,7 +118,7 @@ public class FrameStreamerWorker(ILogger<FrameStreamerWorker> logger, IServicePr
         }
 
         _logger.LogDebug("Re-adding frame source {FrameSourceKey}", eventArgs.Key);
-        frameSourceStream = new(new(eventArgs.NewConfig));
+        frameSourceStream = FrameSourceRuntimeLifetime.Create(eventArgs.NewConfig);
         _sourceFlatMap.Add(eventArgs.Key, frameSourceStream);
 
         if (eventArgs.NewConfig.Enabled)
@@ -151,20 +156,6 @@ public class FrameStreamerWorker(ILogger<FrameStreamerWorker> logger, IServicePr
         FrameSourceRuntime frameSourceRuntime = frameSourceRuntimeLifetime.FrameSourceRuntime;
         FrameSourceConfig frameSourceConfig = frameSourceRuntime.FrameSourceConfig;
         string source = frameSourceRuntimeLifetime.FrameSourceRuntime.FrameSourceConfig.Source;
-
-        Mat frame = new();
-        Locker callbackLocker = new();
-
-        frameSourceRuntime.SetFrameCallback(frame, async (cancellationToken) =>
-        {
-            using var callbackLock = await callbackLocker.WaitAsync(default);
-
-            var ss = frame.ToBytes(ext: ".png");
-            if (frameSourceConfig.ShowWindow && isRunning())
-            {
-                Cv2.ImShow($"Frame Server Source {source}", frame);
-            }
-        });
 
         bool isRunning() => !cancellationToken.IsCancellationRequested && !frameSourceRuntime.IsDisposedOrDisposing;
 
@@ -212,17 +203,14 @@ public class FrameStreamerWorker(ILogger<FrameStreamerWorker> logger, IServicePr
             await TaskUtils.DelayAndForget(5000, cancellationToken);
         }
 
-        using var callbackLock = await callbackLocker.WaitAsync(default);
-
         if (frameSourceConfig.ShowWindow)
         {
             Cv2.DestroyWindow($"Frame Server Source {source}");
         }
 
         InvokerUtils.RunAndForget(frameSourceRuntime.Dispose);
-        InvokerUtils.RunAndForget(frame.Release);
-        InvokerUtils.RunAndForget(frame.Dispose);
-        InvokerUtils.RunAndForget(callbackLocker.Dispose);
+
+        await TaskUtils.DelayAndForget(1000, cancellationToken);
 
         frameSourceRuntimeLifetime.LifetimeGate.SetClosed();
 

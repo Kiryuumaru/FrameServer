@@ -5,6 +5,7 @@ using Domain.Models;
 using OpenCvSharp;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -70,6 +71,10 @@ public partial class FrameSourceStream
                 {
                     try
                     {
+                        if (VideoCapture.IsDisposed || disposingToken.IsCancellationRequested)
+                        {
+                            return;
+                        }
                         if (int.TryParse(source, out int cameraSource))
                         {
                             isOpen = VideoCapture.Open(cameraSource, videoCaptureAPIs);
@@ -124,6 +129,10 @@ public partial class FrameSourceStream
             Mat rawFrame = new();
             Mat resizeFrame = new();
             Mat finalFrame = new();
+            
+            Stopwatch stopwatch = Stopwatch.StartNew();
+            long fpsInterval = 1000 / (FrameSourceConfig.Fps ?? int.MaxValue);
+            long currentInterval = 0;
 
             bool isRunning() =>
                 FrameSourceConfig != null &&
@@ -226,14 +235,23 @@ public partial class FrameSourceStream
                             break;
                         }
                     }
-                    if (hasRead && !rawFrame.Empty() && _frameCallback != null && _frameCallbackMat != null)
-                    {
-                        procFrame();
 
-                        await _frameCallback(disposingToken);
+                    if (stopwatch.ElapsedMilliseconds > currentInterval + fpsInterval)
+                    {
+                        if (hasRead && !rawFrame.Empty() && _frameCallback != null && _frameCallbackMat != null)
+                        {
+                            procFrame();
+
+                            await _frameCallback(disposingToken);
+                        }
+
+                        currentInterval = stopwatch.ElapsedMilliseconds;
                     }
 
-                    Cv2.WaitKey(1);
+                    if (isRunning())
+                    {
+                        Cv2.WaitKey(1);
+                    }
                 }
             }
             finally
@@ -249,16 +267,13 @@ public partial class FrameSourceStream
         }, disposingToken);
     }
 
-    protected void Dispose(bool disposing)
+    protected async ValueTask DisposeAsync(bool disposing)
     {
         if (disposing)
         {
-            Task.Run(async () =>
-            {
-                using var _ = await _locker.WaitAsync(default);
-                InvokerUtils.RunAndForget(VideoCapture.Release);
-                InvokerUtils.RunAndForget(VideoCapture.Dispose);
-            });
+            using var _ = await _locker.WaitAsync(default);
+            InvokerUtils.RunAndForget(VideoCapture.Release);
+            InvokerUtils.RunAndForget(VideoCapture.Dispose);
         }
     }
 }
