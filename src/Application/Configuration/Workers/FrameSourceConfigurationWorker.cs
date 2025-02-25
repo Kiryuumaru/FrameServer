@@ -30,9 +30,6 @@ public class FrameSourceConfigurationWorker(ILogger<FrameSourceConfigurationWork
     private readonly IConfiguration _configuration = configuration;
 
     private readonly Locker _loadLocker = new();
-    private readonly IDeserializer _deserializer = new DeserializerBuilder()
-            .WithNamingConvention(CamelCaseNamingConvention.Instance)
-            .Build();
     private readonly Dictionary<string, FrameSourceConfig> _frameSources = [];
 
     private FileSystemWatcher? _fileWatcher;
@@ -108,6 +105,10 @@ public class FrameSourceConfigurationWorker(ILogger<FrameSourceConfigurationWork
 
         string directory = _configuration.GetHomePath();
         string configFileFilter = _configuration.GetConfigFileFilter();
+        IDeserializer _deserializer = new DeserializerBuilder()
+            .WithNamingConvention(CamelCaseNamingConvention.Instance)
+            .IgnoreUnmatchedProperties()
+            .Build();
 
         try
         {
@@ -216,7 +217,7 @@ public class FrameSourceConfigurationWorker(ILogger<FrameSourceConfigurationWork
         }
     }
 
-    private string GetStringResolution(FrameSourceConfig frameSourceConfig)
+    private static string GetStringResolution(FrameSourceConfig frameSourceConfig)
     {
         return (frameSourceConfig.Width.HasValue && frameSourceConfig.Height.HasValue)
             ? $"{frameSourceConfig.Width}x{frameSourceConfig.Height}"

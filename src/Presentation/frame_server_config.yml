@@ -15,8 +15,8 @@ sources:
     enabled: true
     showWindow: true
     port: 23456
-    width: 480
-    fps: 61
+    width: 1080
+    fps: 60
     source: 0
     videoApi: dshow
   

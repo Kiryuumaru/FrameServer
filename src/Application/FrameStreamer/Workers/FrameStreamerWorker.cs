@@ -23,9 +23,9 @@ public class FrameStreamerWorker(ILogger<FrameStreamerWorker> logger, IServicePr
 {
     private class FrameSourceRuntimeLifetime(FrameSourceRuntime frameSourceRuntime)
     {
-        public static FrameSourceRuntimeLifetime Create(FrameSourceConfig frameSourceConfig)
+        public static FrameSourceRuntimeLifetime Start(FrameSourceConfig frameSourceConfig)
         {
-            return new FrameSourceRuntimeLifetime(FrameSourceRuntime.Create(frameSourceConfig));
+            return new FrameSourceRuntimeLifetime(FrameSourceRuntime.Start(frameSourceConfig));
         }
 
         public FrameSourceRuntime FrameSourceRuntime { get; } = frameSourceRuntime;
@@ -90,7 +90,7 @@ public class FrameStreamerWorker(ILogger<FrameStreamerWorker> logger, IServicePr
         }
 
         _logger.LogDebug("Adding frame source {FrameSourceKey}", eventArgs.Key);
-        frameSourceStream = FrameSourceRuntimeLifetime.Create(eventArgs.NewConfig);
+        frameSourceStream = FrameSourceRuntimeLifetime.Start(eventArgs.NewConfig);
         _sourceFlatMap.Add(eventArgs.Key, frameSourceStream);
 
         if (eventArgs.NewConfig.Enabled)
@@ -118,7 +118,7 @@ public class FrameStreamerWorker(ILogger<FrameStreamerWorker> logger, IServicePr
         }
 
         _logger.LogDebug("Re-adding frame source {FrameSourceKey}", eventArgs.Key);
-        frameSourceStream = FrameSourceRuntimeLifetime.Create(eventArgs.NewConfig);
+        frameSourceStream = FrameSourceRuntimeLifetime.Start(eventArgs.NewConfig);
         _sourceFlatMap.Add(eventArgs.Key, frameSourceStream);
 
         if (eventArgs.NewConfig.Enabled)
@@ -150,12 +150,12 @@ public class FrameStreamerWorker(ILogger<FrameStreamerWorker> logger, IServicePr
     {
         using var _ = _logger.BeginScopeMap(nameof(FrameStreamerWorker), nameof(StartSource), new Dictionary<string, object?>
         {
-            ["FrameSourceConfig"] = frameSourceRuntimeLifetime.FrameSourceRuntime.FrameSourceConfig
+            ["FrameSourceConfig"] = frameSourceRuntimeLifetime.FrameSourceRuntime._frameSourceConfig
         });
 
         FrameSourceRuntime frameSourceRuntime = frameSourceRuntimeLifetime.FrameSourceRuntime;
-        FrameSourceConfig frameSourceConfig = frameSourceRuntime.FrameSourceConfig;
-        string source = frameSourceRuntimeLifetime.FrameSourceRuntime.FrameSourceConfig.Source;
+        FrameSourceConfig frameSourceConfig = frameSourceRuntime._frameSourceConfig;
+        string source = frameSourceRuntimeLifetime.FrameSourceRuntime._frameSourceConfig.Source;
 
         bool isRunning() => !cancellationToken.IsCancellationRequested && !frameSourceRuntime.IsDisposedOrDisposing;
 

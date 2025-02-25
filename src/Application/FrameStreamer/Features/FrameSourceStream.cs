@@ -250,7 +250,14 @@ public partial class FrameSourceStream
 
                     if (isRunning())
                     {
-                        Cv2.WaitKey(1);
+                        if (FrameSourceConfig.ShowWindow)
+                        {
+                            Cv2.WaitKey(1);
+                        }
+                        else
+                        {
+                            await Task.Delay(1);
+                        }
                     }
                 }
             }
@@ -272,8 +279,11 @@ public partial class FrameSourceStream
         if (disposing)
         {
             using var _ = await _locker.WaitAsync(default);
-            InvokerUtils.RunAndForget(VideoCapture.Release);
-            InvokerUtils.RunAndForget(VideoCapture.Dispose);
+            if (!VideoCapture.IsDisposed)
+            {
+                InvokerUtils.RunAndForget(VideoCapture.Release);
+                InvokerUtils.RunAndForget(VideoCapture.Dispose);
+            }
         }
     }
 }

@@ -16,45 +16,44 @@ namespace Application.FrameStreamer.Features;
 [Disposable]
 public partial class FrameSourceRuntime
 {
-    public static FrameSourceRuntime Create(FrameSourceConfig frameSourceConfig)
+    public static FrameSourceRuntime Start(FrameSourceConfig frameSourceConfig)
     {
-        var frameSourceRuntime = new FrameSourceRuntime()
-        {
-            FrameSourceConfig = frameSourceConfig
-        };
+        var frameSourceRuntime = new FrameSourceRuntime(frameSourceConfig);
 
-        bool IsRunning() =>
-            frameSourceRuntime.FrameSourceConfig != null &&
-            !frameSourceRuntime.IsDisposedOrDisposing &&
-            !frameSourceRuntime._frameSourceStream.VideoCapture.IsDisposed &&
-            frameSourceRuntime._frameSourceStream.VideoCapture.IsOpened();
-
-        frameSourceRuntime._frameSourceStream.SetFrameCallback(frameSourceRuntime._frame, async ct =>
-        {
-            if (!IsRunning()) return;
-            using var callbackLock = await frameSourceRuntime._callbackLocker.WaitAsync(default);
-            if (!IsRunning()) return;
-
-            await frameSourceRuntime.FrameCallback(ct);
-        });
-        frameSourceRuntime.CancelWhenDisposing();
+        frameSourceRuntime.Start();
 
         return frameSourceRuntime;
     }
 
+    private readonly FrameSourceConfig _frameSourceConfig;
     private readonly FrameSourceStream _frameSourceStream = new();
     private readonly Locker _locker = new();
     private readonly Locker _callbackLocker = new();
     private readonly Mat _frame = new();
 
-    public required FrameSourceConfig FrameSourceConfig { get; init; }
+    private FrameSourceRuntime(FrameSourceConfig frameSourceConfig)
+    {
+        _frameSourceConfig = frameSourceConfig;
+    }
+
+    private void Start()
+    {
+        _frameSourceStream.SetFrameCallback(_frame, async ct =>
+        {
+            if (!IsRunning()) return;
+            using var callbackLock = await _callbackLocker.WaitAsync(default);
+            if (!IsRunning()) return;
+
+            await FrameCallback(ct);
+        });
+    }
 
     private Task FrameCallback(CancellationToken cancellationToken)
     {
-        //var ss = _frame.ToBytes(ext: ".png");
-        if (FrameSourceConfig.ShowWindow)
+        var ss = _frame.ToBytes(ext: ".png");
+        if (_frameSourceConfig.ShowWindow)
         {
-            Cv2.ImShow($"Frame Server Source {FrameSourceConfig.Source}", _frame);
+            Cv2.ImShow($"Frame Server Source {_frameSourceConfig.Source}", _frame);
         }
 
         return Task.CompletedTask;
@@ -63,7 +62,7 @@ public partial class FrameSourceRuntime
     public async Task Open(CancellationToken cancellationToken)
     {
         using var _ = await _locker.WaitAsync(cancellationToken);
-        await _frameSourceStream.Open(FrameSourceConfig, cancellationToken);
+        await _frameSourceStream.Open(_frameSourceConfig, cancellationToken);
     }
 
     public async Task Start(CancellationToken cancellationToken)
@@ -71,6 +70,12 @@ public partial class FrameSourceRuntime
         using var _ = await _locker.WaitAsync(cancellationToken);
         await _frameSourceStream.Start(cancellationToken);
     }
+
+    private bool IsRunning() =>
+        _frameSourceConfig != null &&
+        !IsDisposedOrDisposing &&
+        !_frameSourceStream.VideoCapture.IsDisposed &&
+        _frameSourceStream.VideoCapture.IsOpened();
 
     protected async ValueTask DisposeAsync(bool disposing)
     {
@@ -81,14 +86,13 @@ public partial class FrameSourceRuntime
             using var callbackLocker = await _callbackLocker.WaitAsync(default);
             using var locker = await _locker.WaitAsync(default);
 
-            if (FrameSourceConfig.ShowWindow)
+            if (_frameSourceConfig.ShowWindow)
             {
-                Cv2.DestroyWindow($"Frame Server Source {FrameSourceConfig.Source}");
+                Cv2.DestroyWindow($"Frame Server Source {_frameSourceConfig.Source}");
             }
 
             InvokerUtils.RunAndForget(_frame.Release);
             InvokerUtils.RunAndForget(_frame.Dispose);
         }
     }
-
 }

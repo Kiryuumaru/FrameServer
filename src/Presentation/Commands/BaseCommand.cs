@@ -21,7 +21,7 @@ public abstract class BaseCommand : ICommand
     public bool AsJson { get; set; } = false;
 
     [CommandOption("home", Description = "Home directory.", EnvironmentVariable = CommonConfigurationExtensions.HomePathKey)]
-    //public string Home { get; set; } = AbsolutePath.Create(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData)) / ApplicationDefaults.ExecutableName;
+    //public string Home { get; set; } = AbsolutePath.Start(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData)) / ApplicationDefaults.ExecutableName;
     public string Home { get; set; } = AbsolutePath.Create(Environment.CurrentDirectory) / ApplicationDefaults.ExecutableName;
 
     public ApplicationHostBuilder<HostApplicationBuilder> CreateBuilder()
